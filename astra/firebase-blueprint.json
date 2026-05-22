@@ -1,0 +1,106 @@
+{
+  "entities": {
+    "ContextLayer": {
+      "title": "ContextLayer",
+      "description": "Active brain layer context that calibrates ASTRA's system instructions and style priorities.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the context layer."
+        },
+        "title": {
+          "type": "string",
+          "description": "The human-readable title of this memory context layer."
+        },
+        "description": {
+          "type": "string",
+          "description": "The factual context snippet or style constraint injected into Gemini prompts."
+        },
+        "updated": {
+          "type": "string",
+          "description": "Relative elapsed time stamp indicating the last state mutation."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether this contextual brain vector is currently active and influencing synthesis."
+        }
+      },
+      "required": ["id", "title", "description", "updated", "active"]
+    },
+    "LearnedInsight": {
+      "title": "LearnedInsight",
+      "description": "Dynamically compiled, high-affinity semantic memories or preferences extracted from user telemetry.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the learned insight."
+        },
+        "title": {
+          "type": "string",
+          "description": "The semantic summarization of the extracted wisdom."
+        },
+        "content": {
+          "type": "string",
+          "description": "The behavioral, design, or algorithmic insight text extracted from logs."
+        },
+        "match": {
+          "type": "number",
+          "description": "Confidence percentage scoring how strongly the user query correlates with this node."
+        },
+        "type": {
+          "type": "string",
+          "description": "The category classification, typically 'insight' or similar."
+        },
+        "date": {
+          "type": "string",
+          "description": "Full timestamp with date and time of formulation."
+        }
+      },
+      "required": ["id", "title", "content", "match", "type", "date"]
+    },
+    "DeveloperKey": {
+      "title": "DeveloperKey",
+      "description": "High-entropy, cryptographically masked API tokens for authorizing external workspaces.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique record identifier."
+        },
+        "name": {
+          "type": "string",
+          "description": "User assigned label for identifying the key client."
+        },
+        "scope": {
+          "type": "string",
+          "description": "Defines access levels and permitted operations."
+        },
+        "token": {
+          "type": "string",
+          "description": "Symmetric representation of the authorization credential."
+        },
+        "created": {
+          "type": "string",
+          "description": "Date format string when token was instantiated."
+        }
+      },
+      "required": ["id", "name", "scope", "token", "created"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/contexts/{contextId}": {
+      "schema": "ContextLayer",
+      "description": "Localized context adjustment parameters whitelisted under each client ID."
+    },
+    "/users/{userId}/insights/{insightId}": {
+      "schema": "LearnedInsight",
+      "description": "Semantic memories harvested specifically from each developer's feedback loops."
+    },
+    "/users/{userId}/developerKeys/{keyId}": {
+      "schema": "DeveloperKey",
+      "description": "Dynamic whitelist of simulated security tokens generated for user accounts."
+    }
+  }
+}

@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+    // 1. Global Safety Net Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Cryptographic Path Variable Validation
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // 3. Entity-Specific Schema Blueprints (The "Anti-Update-Gap")
+    function isValidContextLayer(data) {
+      return data.keys().hasAll(['id', 'title', 'description', 'updated', 'active'])
+        && data.keys().size() == 5
+        && data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 200
+        && data.description is string && data.description.size() <= 10000
+        && data.updated is string && data.updated.size() <= 128
+        && data.active is bool;
+    }
+
+    function isValidLearnedInsight(data) {
+      return data.keys().hasAll(['id', 'title', 'content', 'match', 'type', 'date'])
+        && data.keys().size() == 6
+        && data.id is string && data.id.size() <= 128
+        && data.title is string && data.title.size() <= 200
+        && data.content is string && data.content.size() <= 10000
+        && data.match is number && data.match >= 0 && data.match <= 100
+        && data.type is string && data.type.size() <= 50
+        && data.date is string && data.date.size() <= 128;
+    }
+
+    function isValidDeveloperKey(data) {
+      return data.keys().hasAll(['id', 'name', 'scope', 'token', 'created'])
+        && data.keys().size() == 5
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.scope is string && data.scope.size() <= 128
+        && data.token is string && data.token.size() <= 256
+        && data.created is string && data.created.size() <= 128;
+    }
+
+    // 4. Secured Path Declarations
+    match /users/{userId} {
+      
+      // Context adjustment parameters matching active memory layers
+      match /contexts/{contextId} {
+        allow read: if isOwner(userId);
+        
+        allow create: if isOwner(userId)
+          && isValidId(contextId)
+          && isValidContextLayer(incoming())
+          && incoming().id == contextId;
+          
+        allow update: if isOwner(userId)
+          && isValidContextLayer(incoming())
+          && incoming().id == existing().id // Immutable field check
+          && (
+            // Action 1: Toggle active state only
+            (incoming().diff(existing()).affectedKeys().hasOnly(['active', 'updated'])) ||
+            // Action 2: Comprehensive edit
+            (incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'updated', 'active']))
+          );
+          
+        allow delete: if isOwner(userId);
+      }
+
+      // Memories or behavioral insights harvested from telemetry
+      match /insights/{insightId} {
+        allow read: if isOwner(userId);
+        
+        allow create: if isOwner(userId)
+          && isValidId(insightId)
+          && isValidLearnedInsight(incoming())
+          && incoming().id == insightId;
+          
+        allow update: if isOwner(userId)
+          && isValidLearnedInsight(incoming())
+          && incoming().id == existing().id
+          && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'match', 'date']);
+          
+        allow delete: if isOwner(userId);
+      }
+
+      // Authorization keys mapped for external workspace integration
+      match /developerKeys/{keyId} {
+        allow read: if isOwner(userId);
+        
+        allow create: if isOwner(userId)
+          && isValidId(keyId)
+          && isValidDeveloperKey(incoming())
+          && incoming().id == keyId;
+          
+        allow update: if isOwner(userId)
+          && isValidDeveloperKey(incoming())
+          && incoming().id == existing().id
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'scope', 'token']);
+          
+        allow delete: if isOwner(userId);
+      }
+
+    }
+
+  }
+}
