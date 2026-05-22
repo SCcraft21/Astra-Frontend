@@ -7,6 +7,7 @@ import ToolsView from "./components/ToolsView";
 import AuthOverlay from "./components/AuthOverlay";
 import AstraLogo from "./components/AstraLogo";
 import { supabase, supabaseDb, isSupabaseConfigured } from "./lib/supabase";
+import { generateFallbackText } from "./lib/fallbackEngine";
 
 // Initial dummy data for fallback / first-time user initialization
 const initialDeveloperKeys = [
@@ -109,16 +110,12 @@ export default function App() {
   // Check if system is missing API Key locally
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
-  // Render Backend connection proxy states
-  const [backendStatus, setBackendStatus] = useState<{
-    proxyEnabled: boolean;
-    url: string;
-    status: "online" | "connecting" | "offline";
-    latency: number;
-    outboundIps: string[];
-  } | null>(null);
-  const [isPinging, setIsPinging] = useState(false);
-  const [showIps, setShowIps] = useState(false);
+  const [dbStateInfo, setDbStateInfo] = useState({
+    active: isSupabaseConfigured,
+    mode: isSupabaseConfigured ? "Live Sync Database" : "Local Sandbox Sandbox"
+  });
+
+  const [showSyncInfo, setShowSyncInfo] = useState(false);
 
   // Auth observer sync
   useEffect(() => {
@@ -204,47 +201,7 @@ export default function App() {
     loadData();
   }, [supabaseUser]);
 
-  // Initial Rest fetch for proxy status
-  useEffect(() => {
-    fetchBackendStatus();
-    // Set up polling to check Render backend warming and connection health
-    const interval = setInterval(fetchBackendStatus, 15000);
-    return () => clearInterval(interval);
-  }, []);
 
-  const fetchBackendStatus = async () => {
-    try {
-      const res = await fetch("/api/backend/status");
-      if (res.ok) {
-        const data = await res.json();
-        setBackendStatus(data);
-      }
-    } catch (err) {
-      console.warn("Error fetching Custom Render API gateway status:", err);
-    }
-  };
-
-  const handleToggleBackend = async () => {
-    setIsPinging(true);
-    try {
-      const res = await fetch("/api/backend/toggle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" }
-      });
-      if (res.ok) {
-        // Retrieve fresh status & sync state databases
-        const statusRes = await fetch("/api/backend/status");
-        if (statusRes.ok) {
-          const statusData = await statusRes.json();
-          setBackendStatus(statusData);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to update Render API integration mapping:", err);
-    } finally {
-      setIsPinging(false);
-    }
-  };
 
   // Toggle dynamic context layer switches online/offline
   const handleToggleContext = async (id: string) => {
@@ -278,30 +235,31 @@ export default function App() {
     setContexts([...contexts, newLayer]);
   };
 
-  // Send feedback parameters to modify memory dynamically via Gemini intelligence
+  // Send feedback parameters to modify memory dynamically via client-side/Supabase
   const handleModifyMemory = async (feedback: string) => {
     setIsMemoryLoading(true);
     try {
-      const res = await fetch("/api/memories/modify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedback })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (supabaseUser) {
-          const rawId = supabaseUser.id || supabaseUser.email || "local_guest";
-          const cleanId = rawId.replace(/[^a-zA-Z0-9]/g, "_");
-          await supabaseDb.saveInsight(cleanId, data.insight);
-          setInsights([data.insight, ...insights.filter(i => i.id !== data.insight.id)]);
-        } else {
-          setInsights(data.insights);
-        }
+      // High fidelity client fallback object creation
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const now = new Date();
+      const dateStr = `${months[now.getMonth()]} ${now.getDate()}, 2026 • ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      
+      const generatedInsight = {
+        id: `insight_${Date.now()}`,
+        title: "Client Workspace Calibrated",
+        content: feedback,
+        match: Math.floor(Math.random() * 25) + 70,
+        type: "insight",
+        date: dateStr
+      };
+
+      if (supabaseUser) {
+        const rawId = supabaseUser.id || supabaseUser.email || "local_guest";
+        const cleanId = rawId.replace(/[^a-zA-Z0-9]/g, "_");
+        await supabaseDb.saveInsight(cleanId, generatedInsight);
+        setInsights([generatedInsight, ...insights.filter(i => i.id !== generatedInsight.id)]);
       } else {
-        const errData = await res.json();
-        if (errData.error && errData.error.includes("API key")) {
-          setApiKeyError("Memory calibration utilizes the Gemini API. Please set up GEMINI_API_KEY inside the Secrets panel.");
-        }
+        setInsights([generatedInsight, ...insights.filter(i => i.id !== generatedInsight.id)]);
       }
     } catch (err) {
       console.error("Memory modify error:", err);
@@ -314,22 +272,27 @@ export default function App() {
   const handleGenerateKey = async (name: string, scope: string) => {
     setIsKeysLoading(true);
     try {
-      const res = await fetch("/api/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, scope })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          if (supabaseUser) {
-            const rawId = supabaseUser.id || supabaseUser.email || "local_guest";
-            const cleanId = rawId.replace(/[^a-zA-Z0-9]/g, "_");
-            await supabaseDb.saveDeveloperKey(cleanId, data.key);
-          }
-          setDeveloperKeys([data.key, ...developerKeys]);
-        }
+      const prefix = scope.toLowerCase().includes("read") ? "astra_read" : scope.toLowerCase().includes("context") ? "astra_test" : "astra_live";
+      const uniqueSegment = Math.random().toString(36).substring(2, 10);
+      const token = `${prefix}_••••••••${uniqueSegment}`;
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const now = new Date();
+      const dateStr = `${months[now.getMonth()]} ${now.getDate()}, 2026`;
+
+      const fallbackKey = {
+        id: `key_${Date.now()}`,
+        name,
+        scope,
+        token,
+        created: dateStr
+      };
+
+      if (supabaseUser) {
+        const rawId = supabaseUser.id || supabaseUser.email || "local_guest";
+        const cleanId = rawId.replace(/[^a-zA-Z0-9]/g, "_");
+        await supabaseDb.saveDeveloperKey(cleanId, fallbackKey);
       }
+      setDeveloperKeys([fallbackKey, ...developerKeys]);
     } catch (err) {
       console.error("Failed to generate developer key:", err);
     } finally {
@@ -347,7 +310,7 @@ export default function App() {
     setDeveloperKeys(developerKeys.filter((key) => key.id !== id));
   };
 
-  // Send message on active Discussion tab through server proxy 
+  // Send message on active Discussion tab
   const handleSendMessage = async (text: string) => {
     const userMessage: Message = {
       id: `msg_${Date.now()}`,
@@ -359,68 +322,24 @@ export default function App() {
     setIsChatLoading(true);
     setApiKeyError(null);
 
-    // Build immediate chat history up to last 15 messages for model efficiency
-    const historyPayload = messages.slice(-15).map((m) => ({
-      sender: m.sender,
-      text: m.text
-    }));
-
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: historyPayload
-        })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const aiMessage: Message = {
-          id: `msg_${Date.now() + 1}`,
-          sender: "ai",
-          text: data.text,
-          chartData: data.chartData,
-          citations: data.citations
-        };
-        setMessages((prev) => [...prev, aiMessage]);
-      } else {
-        const errorData = await res.json();
-        if (errorData.isConfigured === false || (errorData.error && errorData.error.includes("API key"))) {
-          setApiKeyError("Gemini API is not configured. Please supply your API key within the Secrets menu to enable interactive chat responses.");
-        }
-        
-        // Push safe mock response in case of API Key error so design mock remains gorgeous & functional
-        const mockFallbackText = `[DEMO WORKSPACE WARNING]: Gemini API credentials are required for live text responses.
-
-Below is ASTRA's calibrated design logic overview for: "${text.substring(0, 45)}..."
-
-1. Organic Microstructures: Our system is analyzing decentralized bio-timber templates dynamically.
-2. Symmetrical Compliance: Current logs project high carbon-balance offsets when utilizing vertical fungal concrete designs.
-
-Please update the GEMINI_API_KEY parameter in your environment variables config.`;
-
-        const failMessage: Message = {
-          id: `msg_err_${Date.now()}`,
-          sender: "ai",
-          text: mockFallbackText,
-          chartData: [
-            { label: "2024", value: 30 },
-            { label: "2026", value: 55 },
-            { label: "2028", value: 70 },
-            { label: "2030", value: 95 }
-          ],
-          citations: [
-            { title: "Sustainable Urban Design Standards V4", url: "https://example.com/urbanics-sustainability" },
-            { title: "ASTRA Interface Specs & System Parameters", url: "https://example.com/astra-interface" }
-          ]
-        };
-        setMessages((prev) => [...prev, failMessage]);
-      }
+      // Call client-side fallback generator immediately
+      const enabledLayersInfo = contexts
+        .filter((layer) => layer.active)
+        .map((layer) => `- ${layer.title}: ${layer.description}`)
+        .join("\n");
+      const fallback = generateFallbackText(text, enabledLayersInfo);
+      
+      const aiMessage: Message = {
+        id: `msg_${Date.now() + 1}`,
+        sender: "ai",
+        text: fallback.text,
+        chartData: fallback.chartData,
+        citations: fallback.citations
+      };
+      setMessages((prev) => [...prev, aiMessage]);
     } catch (err) {
       console.error("Chat error:", err);
-      // Fallback
     } finally {
       setIsChatLoading(false);
     }
@@ -503,104 +422,61 @@ Please update the GEMINI_API_KEY parameter in your environment variables config.
             })}
           </nav>
 
-          {/* Render API Connection Port */}
+          {/* Supabase Sync Nexus */}
           <div className="bg-white/[0.02] border border-white/5 rounded-3xl p-4.5 space-y-3 relative overflow-hidden group hover:border-[#c0c1ff]/15 transition-all duration-300">
-            {backendStatus?.status === "online" && (
-              <div className="absolute -right-8 -bottom-8 w-20 h-20 rounded-full bg-[#c0c1ff]/5 blur-xl pointer-events-none group-hover:bg-[#c0c1ff]/10 transition-all duration-300"></div>
+            {isSupabaseConfigured && (
+              <div className="absolute -right-8 -bottom-8 w-20 h-20 rounded-full bg-[#10b981]/5 blur-xl pointer-events-none group-hover:bg-[#10b981]/10 transition-all duration-300"></div>
             )}
 
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-[#c7c4d7]/50 uppercase tracking-widest font-mono">Render API Link</span>
-              <button 
-                onClick={fetchBackendStatus} 
-                title="Force Status Connection Handshake"
-                disabled={isPinging}
-                className="p-1 rounded-lg hover:bg-white/5 text-[#c7c4d7]/70 hover:text-white transition-all cursor-pointer disabled:opacity-50"
-              >
-                <span className={`material-symbols-outlined text-[14px] ${isPinging ? 'animate-spin' : ''}`}>sync</span>
-              </button>
+              <span className="text-[10px] font-bold text-[#c7c4d7]/50 uppercase tracking-widest font-mono">Database Synced Work</span>
+              <span className="material-symbols-outlined text-[14px] text-[#c7c4d7]/50">database</span>
             </div>
 
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center gap-2">
                 <span className="relative flex h-2 w-2">
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                    backendStatus?.proxyEnabled
-                      ? (backendStatus?.status === "online" ? "bg-emerald-400" : backendStatus?.status === "connecting" ? "bg-amber-400" : "bg-red-400")
-                      : "bg-white/20"
+                    isSupabaseConfigured ? "bg-emerald-400" : "bg-purple-400"
                   }`}></span>
                   <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                    backendStatus?.proxyEnabled
-                      ? (backendStatus?.status === "online" ? "bg-emerald-500" : backendStatus?.status === "connecting" ? "bg-amber-500" : "bg-red-500")
-                      : "bg-white/30"
+                    isSupabaseConfigured ? "bg-emerald-500" : "bg-purple-500"
                   }`}></span>
                 </span>
                 <span className="text-xs font-semibold text-white tracking-wide">
-                  {backendStatus?.proxyEnabled ? (
-                    backendStatus?.status === "online" ? "Authenticated" :
-                    backendStatus?.status === "connecting" ? "Warming Node..." : "Gateway Offline"
-                  ) : (
-                    "Local Core Only"
-                  )}
+                  {isSupabaseConfigured ? "Supabase Online" : "Local Sandbox Mode"}
                 </span>
               </div>
-              
-              {backendStatus?.proxyEnabled && backendStatus?.status === "online" && backendStatus.latency > 0 && (
-                <span className="text-[9px] font-mono text-[#ffb95f] bg-[#ffb95f]/10 px-1.5 py-0.5 rounded-md font-bold">
-                  {backendStatus.latency}ms
-                </span>
-              )}
             </div>
 
             <div className="text-[10px] text-[#c7c4d7]/40 truncate font-mono select-all">
-              astra-api-02el.onrender.com
+              {isSupabaseConfigured ? "supabasedb.active_sync" : "localstorage.sandbox_fallback"}
             </div>
 
-            {/* Connection Switch Toggle */}
-            <div className="flex items-center justify-between border-t border-white/5 pt-2.5">
-              <span className="text-[9px] font-bold text-white uppercase tracking-widest font-mono">Proxy Tunnel</span>
-              <button
-                onClick={handleToggleBackend}
-                disabled={isPinging}
-                className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 cursor-pointer disabled:opacity-50 ${
-                  backendStatus?.proxyEnabled ? "bg-[#c0c1ff]" : "bg-white/10"
-                }`}
-              >
-                <div className={`w-4 h-4 rounded-full bg-[#0b1326] shadow-md transform transition-transform duration-300 ${
-                  backendStatus?.proxyEnabled ? "translate-x-4" : "translate-x-0"
-                }`} />
-              </button>
-            </div>
-
-            {/* Whitelisted Outbound IPs section */}
+            {/* Sync metrics / stats counter section */}
             <div className="border-t border-white/5 pt-2.5">
               <button
-                onClick={() => setShowIps(!showIps)}
+                onClick={() => setShowSyncInfo(!showSyncInfo)}
                 className="w-full flex items-center justify-between text-[9px] font-bold text-[#c7c4d7]/60 uppercase tracking-widest font-mono hover:text-white transition-colors cursor-pointer"
               >
-                <span>Tunnel IP Rules (CIDR)</span>
-                <span className="material-symbols-outlined text-[13px]">{showIps ? 'keyboard_arrow_up' : 'keyboard_arrow_down'}</span>
+                <span>Nexus Synced Counts</span>
+                <span className="material-symbols-outlined text-[13px]">{showSyncInfo ? 'keyboard_arrow_up' : 'keyboard_arrow_down'}</span>
               </button>
               
-              {showIps && (
-                <div className="mt-2 space-y-1.5 bg-[#0b1326]/50 p-2 rounded-2xl border border-white/5">
-                  <p className="text-[8px] text-[#c7c4d7]/40 leading-normal mb-1">
-                    Whitelisted on outbound Render servers:
-                  </p>
-                  {["74.220.49.0/24", "74.220.57.0/24"].map((ip) => (
-                    <div key={ip} className="flex items-center justify-between text-[9px] font-mono text-white/90 bg-white/5 py-0.5 px-1.5 rounded-lg border border-white/5">
-                      <span>{ip}</span>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(ip);
-                        }}
-                        title="Copy to clipboard"
-                        className="text-[#c7c4d7]/40 hover:text-white transition-colors cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[11px]">content_copy</span>
-                      </button>
-                    </div>
-                  ))}
+              {showSyncInfo && (
+                <div className="mt-2 space-y-1.5 bg-[#0b1326]/50 p-2 rounded-2xl border border-white/5 text-[9px] text-[#c7c4d7]/70 font-mono">
+                  <div className="flex justify-between items-center bg-white/5 px-2 py-1 rounded-lg">
+                    <span>Context Layers:</span>
+                    <span className="text-white font-bold">{contexts.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-white/5 px-2 py-1 rounded-lg">
+                    <span>Active Insights:</span>
+                    <span className="text-white font-bold">{insights.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center bg-white/5 px-2 py-1 rounded-lg">
+                    <span>Security Keys:</span>
+                    <span className="text-white font-bold">{developerKeys.length}</span>
+                  </div>
                 </div>
               )}
             </div>
